@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rev Voice - Revolt Motors Gemini Live</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <h1>Rev Voice</h1>
+    <p style="text-align: center; color: #94a3b8; margin-bottom: 20px;">
+      Powered by Gemini Live API • Revolt Motors Assistant
+    </p>
+    
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="status-dot" id="serverStatus"></div>
+        <span>Server</span>
+      </div>
+      <div class="status-item">
+        <div class="status-dot" id="geminiStatus"></div>
+        <span>Gemini</span>
+      </div>
+      <div class="status-item">
+        <div class="status-dot" id="micStatus"></div>
+        <span>Microphone</span>
+      </div>
+    </div>
+    
+
+    <div class="controls">
+      <button id="connectBtn">🔌 Connect</button>
+      <button id="startBtn">🎤 Start Mic</button>
+      <button id="stopBtn">⏹️ Stop Mic</button>
+      <button id="interruptBtn">⏸️ Interrupt</button>
+    </div>
+
+    <div class="lang">
+      <label>🌐 Language: <input id="lang" value="en-IN" placeholder="en-IN"></label>
+    </div>
+    
+
+    <div class="log" id="log"></div>
+  </div>
+  
+  <script src="/main.js"></script>
+  <script>
+    window.__SYSTEM_INSTRUCTIONS__ = `You are Rev, an assistant that only talks about Revolt Motors. Politely refuse unrelated questions and bring the conversation back to Revolt bikes, pricing, range, charging, servicing, test rides, locations, financing, and ownership.`;
+  </script>
+</body>
+</html>
+
+

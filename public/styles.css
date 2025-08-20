@@ -1,0 +1,284 @@
+/* Revolt Motors Inspired Voice Chat UI */
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+	color: #e2e8f0;
+	min-height: 100vh;
+	overflow-x: hidden;
+}
+
+.app {
+	max-width: 900px;
+	margin: 0 auto;
+	padding: 20px;
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Header */
+.app h1 {
+	text-align: center;
+	font-size: 2.5rem;
+	font-weight: 700;
+	margin-bottom: 1rem;
+	background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+	text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+}
+
+/* Controls Section */
+.controls {
+	display: flex;
+	gap: 12px;
+	margin-bottom: 20px;
+	justify-content: center;
+	flex-wrap: wrap;
+}
+
+button {
+	background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+	color: white;
+	border: none;
+	border-radius: 12px;
+	padding: 12px 24px;
+	font-size: 1rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.3s ease;
+	box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+	position: relative;
+	overflow: hidden;
+}
+
+button:hover:not([disabled]) {
+	transform: translateY(-2px);
+	box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+}
+
+button:active:not([disabled]) {
+	transform: translateY(0);
+}
+
+button[disabled] {
+	opacity: 0.5;
+	cursor: not-allowed;
+	background: #64748b;
+	box-shadow: none;
+}
+
+/* Special button styles */
+#connectBtn {
+	background: linear-gradient(135deg, #10b981, #059669);
+	box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+#connectBtn:hover:not([disabled]) {
+	box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+}
+
+#startBtn {
+	background: linear-gradient(135deg, #f59e0b, #d97706);
+	box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+#startBtn:hover:not([disabled]) {
+	box-shadow: 0 8px 25px rgba(245, 158, 11, 0.4);
+}
+
+#stopBtn {
+	background: linear-gradient(135deg, #ef4444, #dc2626);
+	box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+}
+
+#stopBtn:hover:not([disabled]) {
+	box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
+}
+
+#interruptBtn {
+	background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+	box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+#interruptBtn:hover:not([disabled]) {
+	box-shadow: 0 8px 25px rgba(139, 92, 246, 0.4);
+}
+
+/* Language selector */
+.lang {
+	margin-bottom: 20px;
+	text-align: center;
+}
+
+.lang label {
+	font-size: 1rem;
+	font-weight: 500;
+	color: #94a3b8;
+}
+
+.lang input {
+	background: #1e293b;
+	border: 2px solid #334155;
+	border-radius: 8px;
+	padding: 8px 12px;
+	color: #e2e8f0;
+	font-size: 1rem;
+	margin-left: 8px;
+	transition: border-color 0.3s ease;
+}
+
+.lang input:focus {
+	outline: none;
+	border-color: #3b82f6;
+	box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Log section */
+.log {
+	background: linear-gradient(135deg, #1e293b, #0f172a);
+	border: 2px solid #334155;
+	border-radius: 16px;
+	padding: 20px;
+	min-height: 300px;
+	max-height: 500px;
+	overflow-y: auto;
+	white-space: pre-wrap;
+	font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+	font-size: 0.9rem;
+	line-height: 1.5;
+	box-shadow: inset 0 4px 20px rgba(0, 0, 0, 0.3);
+	flex: 1;
+}
+
+.log::-webkit-scrollbar {
+	width: 8px;
+}
+
+.log::-webkit-scrollbar-track {
+	background: #334155;
+	border-radius: 4px;
+}
+
+.log::-webkit-scrollbar-thumb {
+	background: #64748b;
+	border-radius: 4px;
+}
+
+.log::-webkit-scrollbar-thumb:hover {
+	background: #94a3b8;
+}
+
+/* Status indicators */
+.status-bar {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20px;
+	padding: 16px;
+	background: rgba(30, 41, 59, 0.8);
+	border-radius: 12px;
+	border: 1px solid #334155;
+}
+
+.status-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.9rem;
+}
+
+.status-dot {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: #64748b;
+	transition: background-color 0.3s ease;
+}
+
+.status-dot.connected {
+	background: #10b981;
+	box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+.status-dot.gemini {
+	background: #8b5cf6;
+	box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+}
+
+.status-dot.mic {
+	background: #f59e0b;
+	box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+	.app {
+		padding: 15px;
+	}
+	
+	.app h1 {
+		font-size: 2rem;
+	}
+	
+	.controls {
+		flex-direction: column;
+		align-items: center;
+	}
+	
+	button {
+		width: 100%;
+		max-width: 300px;
+	}
+	
+	.status-bar {
+		flex-direction: column;
+		gap: 12px;
+		text-align: center;
+	}
+}
+
+/* Animations */
+@keyframes pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.7; }
+}
+
+.status-dot.connected,
+.status-dot.gemini,
+.status-dot.mic {
+	animation: pulse 2s infinite;
+}
+
+/* Loading states */
+button.loading {
+	position: relative;
+	color: transparent;
+}
+
+button.loading::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 20px;
+	height: 20px;
+	margin: -10px 0 0 -10px;
+	border: 2px solid transparent;
+	border-top: 2px solid white;
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	0% { transform: rotate(0deg); }
+	100% { transform: rotate(360deg); }
+}
+
