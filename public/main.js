@@ -5,6 +5,8 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const interruptBtn = document.getElementById('interruptBtn');
 const langInput = document.getElementById('lang');
+const textInputEl = document.getElementById('textInput');
+const sendBtn = document.getElementById('sendBtn');
 
 const serverStatus = document.querySelector('.status-dot.server');
 const geminiStatus = document.querySelector('.status-dot.gemini');
@@ -19,11 +21,75 @@ let isMicActive = false;
 let isGeminiConnected = false;
 let isGeminiSpeaking = false;
 let currentResponseText = '';
+let speechUtterance = null;
+let micPrewarmRequested = false;
+
+function mapUiLangToLocale(value) {
+	switch ((value || '').toLowerCase()) {
+		case 'en': return 'en-IN';
+		case 'hi': return 'hi-IN';
+		case 'hinglish': return 'hi-IN';
+		case 'mr': return 'mr-IN';
+		case 'bn': return 'bn-IN';
+		case 'gu': return 'gu-IN';
+		case 'pa': return 'pa-IN';
+		case 'ta': return 'ta-IN';
+		case 'te': return 'te-IN';
+		case 'kn': return 'kn-IN';
+		case 'ml': return 'ml-IN';
+		default: return 'en-IN';
+	}
+}
 
 
 function init() {
     updateButtonStates();
     updateStatusIndicators();
+    if (navigator.permissions && navigator.permissions.query) {
+        try {
+            navigator.permissions.query({ name: 'microphone' }).then((status) => {
+                console.log('Microphone permission:', status.state);
+            }).catch(() => {});
+        } catch (_) {}
+    }
+    setupMicPermissionPrompt();
+}
+
+function setupMicPermissionPrompt() {
+    const promptEl = document.getElementById('micPrompt');
+    const allowBtn = document.getElementById('micAllowBtn');
+    if (!promptEl || !allowBtn) return;
+    if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'microphone' }).then((status) => {
+            if (status.state === 'granted') {
+                promptEl.style.display = 'none';
+            } else {
+                promptEl.style.display = 'flex';
+            }
+            status.onchange = () => {
+                promptEl.style.display = status.state === 'granted' ? 'none' : 'flex';
+            };
+        }).catch(() => {
+            promptEl.style.display = 'flex';
+        });
+    } else {
+        promptEl.style.display = 'flex';
+    }
+
+    allowBtn.onclick = async () => {
+        if (micPrewarmRequested) return;
+        micPrewarmRequested = true;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(t => t.stop());
+            log('🎙️ Microphone permission granted');
+            promptEl.style.display = 'none';
+        } catch (err) {
+            log('⚠️ Please allow microphone access to use voice chat.');
+            console.warn('User denied microphone permission:', err);
+            promptEl.style.display = 'flex';
+        }
+    };
 }
 
 
@@ -43,9 +109,9 @@ function updateButtonStates() {
 
 
 function updateStatusIndicators() {
-    serverStatus.className = `status-dot server ${isConnected ? 'connected' : 'disconnected'}`;
-    geminiStatus.className = `status-dot gemini ${isGeminiConnected ? 'connected' : 'disconnected'}`;
-    micStatus.className = `status-dot mic ${isMicActive ? 'active' : 'inactive'}`;
+    serverStatus.className = `status-dot server ${isConnected ? 'connected' : ''}`;
+    geminiStatus.className = `status-dot gemini ${isGeminiConnected ? 'connected' : ''}`;
+    micStatus.className = `status-dot mic ${isMicActive ? 'active' : ''}`;
 }
 
 
@@ -156,6 +222,23 @@ function handleServerMessage(message) {
             log(`🤖 Rev: ${message.text}`);
             isGeminiSpeaking = true;
             currentResponseText = message.text;
+            try {
+                if (speechSynthesis) {
+                    if (speechUtterance) {
+                        speechSynthesis.cancel();
+                        speechUtterance = null;
+                    }
+                    speechUtterance = new SpeechSynthesisUtterance(message.text);
+                    speechUtterance.lang = mapUiLangToLocale(langInput.value);
+                    speechUtterance.onend = () => {
+                        isGeminiSpeaking = false;
+                        updateButtonStates();
+                    };
+                    speechSynthesis.speak(speechUtterance);
+                }
+            } catch (e) {
+                console.warn('Speech synthesis failed:', e);
+            }
             updateButtonStates();
             break;
             
@@ -178,27 +261,25 @@ async function startMic() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                sampleRate: 16000,
                 channelCount: 1,
                 echoCancellation: true,
                 noiseSuppression: true
             } 
         });
         
-        audioContext = new AudioContext({ sampleRate: 16000 });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         const source = audioContext.createMediaStreamSource(mediaStream);
         
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        const processor = audioContext.createScriptProcessor(2048, 1, 1);
         
         processor.onaudioprocess = (event) => {
             if (isMicActive && ws && ws.readyState === WebSocket.OPEN) {
                 const inputBuffer = event.inputBuffer;
                 const inputData = inputBuffer.getChannelData(0);
-                
-
                 const int16Data = new Int16Array(inputData.length);
                 for (let i = 0; i < inputData.length; i++) {
-                    int16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+                    const s = Math.max(-1, Math.min(1, inputData[i]));
+                    int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
                 }
 
                 ws.send(JSON.stringify({
@@ -212,7 +293,7 @@ async function startMic() {
         source.connect(processor);
         processor.connect(audioContext.destination);
         
-        ws.send(JSON.stringify({ type: 'start_mic' }));
+        ws.send(JSON.stringify({ type: 'start_mic', languageCode: (langInput.value || 'en') }));
         
     } catch (error) {
         log(`❌ Failed to start microphone: ${error.message}`);
@@ -244,6 +325,9 @@ function interrupt() {
     
     if (isGeminiSpeaking) {
         log('⏹️ Interrupting AI response...');
+        if (speechSynthesis) {
+            try { speechSynthesis.cancel(); } catch (e) {}
+        }
         ws.send(JSON.stringify({ type: 'interrupt' }));
     } else {
         log('ℹ️ No AI response to interrupt');
@@ -259,29 +343,28 @@ interruptBtn.onclick = interrupt;
 document.addEventListener('DOMContentLoaded', init);
 
 
-const textInput = document.createElement('input');
-textInput.type = 'text';
-textInput.placeholder = 'Type a message to test (Enter to send)';
-textInput.style.width = '100%';
-textInput.style.padding = '8px';
-textInput.style.marginTop = '10px';
-textInput.style.borderRadius = '4px';
-textInput.style.border = '1px solid #ccc';
-
-textInput.addEventListener('keypress', (event) => {
-    if (event.key === 'Enter' && textInput.value.trim()) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'text_message',
-                text: textInput.value.trim()
-            }));
-            textInput.value = '';
-        } else {
-            log('❌ Not connected to server');
-        }
+function sendTextMessage() {
+    if (!textInputEl) return;
+    const text = textInputEl.value.trim();
+    if (!text) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'text_message', text }));
+        textInputEl.value = '';
+    } else {
+        log('❌ Not connected to server');
     }
-});
+}
 
-logEl.parentNode.insertBefore(textInput, logEl.nextSibling);
+if (textInputEl) {
+    textInputEl.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            sendTextMessage();
+        }
+    });
+}
+
+if (sendBtn) {
+    sendBtn.addEventListener('click', sendTextMessage);
+}
 
 

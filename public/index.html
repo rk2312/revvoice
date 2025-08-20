@@ -5,43 +5,61 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Rev Voice - Revolt Motors Gemini Live</title>
   <link rel="stylesheet" href="/styles.css">
+  <meta http-equiv="Permissions-Policy" content="microphone=(self)">
 </head>
 <body>
   <div class="app">
     <h1>Rev Voice</h1>
-    <p style="text-align: center; color: #94a3b8; margin-bottom: 20px;">
+    <p style="text-align: center; color: #94a3b8; margin-bottom: 9px; font-size: 0.7rem;">
       Powered by Gemini Live API • Revolt Motors Assistant
     </p>
+    <div id="micPrompt" class="mic-permission" style="display:none;">
+      <span>Allow microphone access for voice chat.</span>
+      <button id="micAllowBtn">Enable Microphone</button>
+    </div>
     
     <div class="status-bar">
       <div class="status-item">
-        <div class="status-dot" id="serverStatus"></div>
+        <div class="status-dot server"></div>
         <span>Server</span>
       </div>
       <div class="status-item">
-        <div class="status-dot" id="geminiStatus"></div>
+        <div class="status-dot gemini"></div>
         <span>Gemini</span>
       </div>
       <div class="status-item">
-        <div class="status-dot" id="micStatus"></div>
+        <div class="status-dot mic"></div>
         <span>Microphone</span>
       </div>
     </div>
     
 
     <div class="controls">
-      <button id="connectBtn">🔌 Connect</button>
-      <button id="startBtn">🎤 Start Mic</button>
-      <button id="stopBtn">⏹️ Stop Mic</button>
-      <button id="interruptBtn">⏸️ Interrupt</button>
+      <button id="connectBtn"> Connect</button>
+      <button id="startBtn"> Start Mic</button>
+      <button id="stopBtn"> Stop Mic</button>
+      <button id="interruptBtn"> Interrupt</button>
     </div>
 
     <div class="lang">
-      <label>🌐 Language: <input id="lang" value="en-IN" placeholder="en-IN"></label>
+      <label>🌐 Language:
+        <select id="lang">
+          <option value="en" selected>English</option>
+          <option value="hi">Hindi</option>
+          <option value="hinglish">Hinglish</option>
+       
+        </select>
+      </label>
     </div>
     
 
     <div class="log" id="log"></div>
+    <div class="input-bar">
+      <input id="textInput" type="text" placeholder="Type a message..." />
+      <button id="sendBtn" title="Send" aria-label="Send" class="send-btn">
+        <img src="/sendicon.png" alt="" class="plane-icon" aria-hidden="true" />
+      </button>
+    </div>
   </div>
   
   <script src="/main.js"></script>

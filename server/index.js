@@ -6,11 +6,25 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const WebSocket = require('ws');
 
+let universalFetch = globalThis.fetch;
+if (!universalFetch) {
+	try {
+		universalFetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
+	} catch (e) {
+		console.warn('Fetch API not available and node-fetch not installed. API calls may fail.');
+	}
+}
+
 dotenv.config();
 
 const app = express();
 app.use(compression());
 app.use(cors());
+
+app.use((req, res, next) => {
+	res.setHeader('Permissions-Policy', 'microphone=(self)');
+	next();
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const server = http.createServer(app);
@@ -27,19 +41,18 @@ if (!GOOGLE_API_KEY) {
 
 const activeConversations = new Map();
 
-async function callGeminiAPI(prompt, conversationHistory = []) {
+async function callGeminiAPI(prompt, conversationHistory = [], { abortController, uiLanguage } = {}) {
 	try {
 		console.log('Calling Gemini API with prompt:', prompt);
 		console.log('Conversation history length:', conversationHistory.length);
-		const contents = [
-			{
-				parts: [
-					{
-						text: `You are Rev, an assistant that only talks about Revolt Motors. Politely refuse unrelated questions and bring the conversation back to Revolt bikes, pricing, range, charging, servicing, test rides, locations, financing, and ownership. Keep responses concise and conversational.`
-					}
-				]
-			}
-		];
+		const contents = [];
+		const systemInstruction = {
+			parts: [
+				{
+					text: `You are Rev, an assistant that only talks about Revolt Motors. Politely refuse unrelated questions and bring the conversation back to Revolt bikes, pricing, range, charging, servicing, test rides, locations, financing, and ownership. Keep responses concise and conversational.${uiLanguage ? " Respond in " + uiLanguage + "." : ''}`
+				}
+			]
+		};
 
 		const recentHistory = conversationHistory.slice(-10);
 		recentHistory.forEach(msg => {
@@ -53,18 +66,19 @@ async function callGeminiAPI(prompt, conversationHistory = []) {
 			role: 'user'
 		});
 
-		const requestBody = { contents };
+		const requestBody = { system_instruction: systemInstruction, contents };
 		console.log('Request body:', JSON.stringify(requestBody, null, 2));
 
 		const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
 		console.log('Calling API URL:', apiUrl);
 
-		const response = await fetch(apiUrl, {
+		const response = await (universalFetch || fetch)(apiUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify(requestBody)
+			body: JSON.stringify(requestBody),
+			signal: abortController?.signal
 		});
 
 		console.log('Response status:', response.status);
@@ -95,9 +109,99 @@ async function callGeminiAPI(prompt, conversationHistory = []) {
 	}
 }
 
-function processAudioToText(audioData) {
+function encodeWavFromPCM16(int16Array, sampleRate = 16000) {
+	const numFrames = int16Array.length;
+	const bytesPerSample = 2;
+	const blockAlign = bytesPerSample * 1;
+	const byteRate = sampleRate * blockAlign;
+	const dataSize = numFrames * bytesPerSample;
+	const buffer = Buffer.alloc(44 + dataSize);
+	let offset = 0;
 
-	return "Hello, I'd like to know about Revolt Motors bikes";
+	buffer.write('RIFF', offset); offset += 4;
+	buffer.writeUInt32LE(36 + dataSize, offset); offset += 4;
+	buffer.write('WAVE', offset); offset += 4;
+	buffer.write('fmt ', offset); offset += 4;
+	buffer.writeUInt32LE(16, offset); offset += 4;
+	buffer.writeUInt16LE(1, offset); offset += 2;
+	buffer.writeUInt16LE(1, offset); offset += 2;
+	buffer.writeUInt32LE(sampleRate, offset); offset += 4;
+	buffer.writeUInt32LE(byteRate, offset); offset += 4;
+	buffer.writeUInt16LE(blockAlign, offset); offset += 2;
+	buffer.writeUInt16LE(16, offset); offset += 2;
+	buffer.write('data', offset); offset += 4;
+	buffer.writeUInt32LE(dataSize, offset); offset += 4;
+
+	for (let i = 0; i < int16Array.length; i++) {
+		buffer.writeInt16LE(int16Array[i], offset);
+		offset += 2;
+	}
+	return buffer;
+}
+
+async function processAudioToText(audioInt16, { conversationHistory = [], languageCode = 'en-IN', abortController } = {}) {
+	try {
+		const wavBuffer = encodeWavFromPCM16(Int16Array.from(audioInt16), 16000);
+		const base64 = wavBuffer.toString('base64');
+
+		const contents = [];
+		const systemInstruction = {
+			parts: [
+				{
+					text: `You are Rev, an assistant that only talks about Revolt Motors. Politely refuse unrelated questions and bring the conversation back to Revolt bikes, pricing, range, charging, servicing, test rides, locations, financing, and ownership. Respond in ${languageCode === 'hinglish' ? 'a mix of Hindi and English (Hinglish)' : languageCode}. Keep responses concise and conversational.`
+				}
+			]
+		};
+
+		const recentHistory = conversationHistory.slice(-10);
+		recentHistory.forEach(msg => {
+			if (!msg || !msg.text) return;
+			const role = msg.role === 'model' ? 'model' : 'user';
+			contents.push({
+				role,
+				parts: [{ text: msg.text }]
+			});
+		});
+		recentHistory.forEach(msg => {
+			if (!msg || !msg.text) return;
+			const role = msg.role === 'model' ? 'model' : 'user';
+			contents.push({
+				role,
+				parts: [{ text: msg.text }]
+			});
+		});
+
+		contents.push({
+			role: 'user',
+			parts: [
+				{ inline_data: { mime_type: 'audio/wav', data: base64 } }
+			]
+		});
+
+		const requestBody = { system_instruction: systemInstruction, contents };
+		const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
+		const response = await (universalFetch || fetch)(apiUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(requestBody),
+			signal: abortController?.signal
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`HTTP ${response.status}: ${errorText}`);
+		}
+
+		const data = await response.json();
+		const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+		if (!responseText) {
+			throw new Error('No text found in AI response');
+		}
+		return responseText;
+	} catch (error) {
+		console.error('Audio->Text processing error:', error);
+		return `Sorry, I could not process the audio: ${error.message}`;
+	}
 }
 
 wss.on('connection', (clientWs) => {
@@ -107,7 +211,9 @@ wss.on('connection', (clientWs) => {
 		conversationHistory: [],
 		isSpeaking: false,
 		currentResponse: null,
-		audioBuffer: []
+		audioBuffer: [],
+		languageCode: 'en-IN',
+		abortController: null
 	});
 
 	clientWs.send(JSON.stringify({
@@ -141,6 +247,9 @@ wss.on('connection', (clientWs) => {
 				case 'start_mic':
 					conversation.isSpeaking = true;
 					conversation.audioBuffer = [];
+					if (typeof message.languageCode === 'string' && message.languageCode.trim()) {
+						conversation.languageCode = message.languageCode.trim();
+					}
 					clientWs.send(JSON.stringify({
 						type: 'mic_status',
 						started: true
@@ -155,7 +264,16 @@ wss.on('connection', (clientWs) => {
 						if (conversation.audioBuffer.length > 0) {
 							console.log('Processing audio data...');
 
-							const userText = processAudioToText(conversation.audioBuffer);
+							if (conversation.abortController) {
+								try { conversation.abortController.abort(); } catch (e) {}
+							}
+							conversation.abortController = new AbortController();
+
+							const userText = await processAudioToText(conversation.audioBuffer, {
+								conversationHistory: conversation.conversationHistory,
+								languageCode: conversation.languageCode,
+								abortController: conversation.abortController
+							});
 
 							conversation.conversationHistory.push({
 								role: 'user',
@@ -167,7 +285,7 @@ wss.on('connection', (clientWs) => {
 							}));
 
 							console.log('Getting AI response...');
-							const aiResponse = await callGeminiAPI(userText, conversation.conversationHistory);
+							const aiResponse = await callGeminiAPI(userText, conversation.conversationHistory, { abortController: conversation.abortController, uiLanguage: conversation.languageCode });
 
 							conversation.conversationHistory.push({
 								role: 'model',
@@ -190,22 +308,20 @@ wss.on('connection', (clientWs) => {
 					break;
 					
 				case 'interrupt':
-					if (conversation.isSpeaking) {
-						conversation.isSpeaking = false;
-						conversation.audioBuffer = [];
-						
-						clientWs.send(JSON.stringify({
-							type: 'interrupt_ack',
-							interrupted: true
-						}));
-						
-						clientWs.send(JSON.stringify({
-							type: 'mic_status',
-							started: false
-						}));
-						
-						console.log('Conversation interrupted');
+					conversation.isSpeaking = false;
+					conversation.audioBuffer = [];
+					if (conversation.abortController) {
+						try { conversation.abortController.abort(); } catch (e) {}
 					}
+					clientWs.send(JSON.stringify({
+						type: 'interrupt_ack',
+						interrupted: true
+					}));
+					clientWs.send(JSON.stringify({
+						type: 'mic_status',
+						started: false
+					}));
+					console.log('Conversation interrupted');
 					break;
 					
 				case 'audio_data':
@@ -228,7 +344,11 @@ wss.on('connection', (clientWs) => {
 						}));
 						
 						console.log('Calling Gemini API for text message...');
-						const response = await callGeminiAPI(message.text, conversation.conversationHistory);
+						if (conversation.abortController) {
+							try { conversation.abortController.abort(); } catch (e) {}
+						}
+						conversation.abortController = new AbortController();
+						const response = await callGeminiAPI(message.text, conversation.conversationHistory, { abortController: conversation.abortController, uiLanguage: conversation.languageCode });
 						
 						conversation.conversationHistory.push({
 							role: 'model',
@@ -265,19 +385,38 @@ wss.on('connection', (clientWs) => {
 	});
 });
 
-const port = Number(process.env.PORT || 3000);
-server.listen(port, () => {
-	console.log(`Server listening on http://localhost:${port}`);
-	console.log(`WebSocket available at ws://localhost:${port}/ws`);
-	if (!GOOGLE_API_KEY) {
-		console.log('⚠️  WARNING: GOOGLE_API_KEY not set. Frontend will work in demo mode.');
-	} else {
-		console.log('✅ Gemini REST API configured with API key');
-		console.log(`📡 Using model: ${GEMINI_MODEL}`);
-		console.log('🔗 API endpoint: generativelanguage.googleapis.com/v1beta/models');
-		console.log('🎤 Voice chat with interrupt functionality ready!');
-		console.log('🔑 API Key (first 10 chars):', GOOGLE_API_KEY.substring(0, 10) + '...');
+const basePort = Number(process.env.PORT || 3000);
+const candidatePorts = Array.from({ length: 10 }, (_, i) => basePort + i);
+
+function attemptListen(ports) {
+	if (ports.length === 0) {
+		console.error('No available ports to bind the server.');
+		process.exit(1);
 	}
-});
+	const p = ports[0];
+	server.once('error', (err) => {
+		if (err && err.code === 'EADDRINUSE') {
+			console.warn(`Port ${p} is in use. Trying next port...`);
+			return attemptListen(ports.slice(1));
+		}
+		console.error('Server failed to start:', err);
+		process.exit(1);
+	});
+	server.listen(p, () => {
+		console.log(`Server listening on http://localhost:${p}`);
+		console.log(`WebSocket available at ws://localhost:${p}/ws`);
+		if (!GOOGLE_API_KEY) {
+			console.log('⚠️  WARNING: GOOGLE_API_KEY not set. Frontend will work in demo mode.');
+		} else {
+			console.log('✅ Gemini REST API configured with API key');
+			console.log(`📡 Using model: ${GEMINI_MODEL}`);
+			console.log('🔗 API endpoint: generativelanguage.googleapis.com/v1beta/models');
+			console.log('🎤 Voice chat with interrupt functionality ready!');
+			console.log('🔑 API Key (first 10 chars):', GOOGLE_API_KEY.substring(0, 10) + '...');
+		}
+	});
+}
+
+attemptListen(candidatePorts);
 
 
